@@ -3,6 +3,8 @@ import socket
 import time
 import binascii
 import pycom
+import struct
+import fragment
 
 lora = LoRa(mode=LoRa.LORAWAN)
 app_eui = binascii.unhexlify('00 00 00 00 00 00 00 00'.replace(' ',''))
@@ -19,13 +21,27 @@ s.setsockopt(socket.SOL_LORA,  socket.SO_CONFIRMED,  False)
 
 pycom.heartbeat(False)
 
+# create a message buffer
+message = "Hello LoRa"
+fmt = ">%ds" % len(message)
+buf = struct.pack(fmt, message)
+l2_size = len(message)  # it must be set in each sending message.
+
+# fragment instance
+fg = fragment.fragment(buf, 1, 5, window_size=1)
+
 while True:
     pycom.rgbled(0xFF0000)
     s.setblocking(True)
     s.settimeout(10)
 
+    ret, piece, = fg.next_fragment(l2_size)
+    if ret == 0:
+        break
+    print("fragment", repr(piece))
+
     try:
-        s.send('Hello LoRa')
+        s.send(piece)
     except:
         print ('timeout in sending')
 
