@@ -28,29 +28,34 @@ buf = struct.pack(fmt, message)
 l2_size = len(message)  # it must be set in each sending message.
 
 # fragment instance
-fg = fragment.fragment(buf, 1, 5, window_size=1)
+# XXX rule_id and dtag are zero for the ietf100 testing.
+fg = fragment.fragment(buf, 0, 0, window_size=1)
 
 while True:
     pycom.rgbled(0xFF0000)
     s.setblocking(True)
     s.settimeout(10)
 
-    ret, piece, = fg.next_fragment(l2_size)
-    if ret == 0:
-        break
-    print("fragment", repr(piece))
+    tx_done, tx_piece, = fg.next_fragment(l2_size)
+    print("fragment", repr(tx_piece))
 
     try:
-        s.send(piece)
+        s.send(tx_piece)
     except:
         print ('timeout in sending')
 
     pycom.rgbled(0x00FF00)
 
     try:
-        data = s.recv(64)
+        rx_data = s.recv(64)
 
-        print(data)
+        print(rx_data)
+        ok = fg.check_ack(rx_data)
+
+        # finish to send
+        if ack_ok and tx_done:
+            break
+
         pycom.rgbled(0x0000FF)
     except:
         print ('timeout in receive')
