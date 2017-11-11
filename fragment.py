@@ -50,7 +50,24 @@ fp_ietf100 = {
     "fcn_mask": 0x007f,
     }
 
-fp = fp_ietf100
+fp_ietf100_win = {
+    # 0|0|12345678|12345678
+    "hdr_size": 16,
+    "rid_size": 0,
+    "rid_shift": 0,
+    "rid_mask": 0x0000,
+    "dtag_size": 0,
+    "dtag_shift": 0,
+    "dtag_mask": 0x0000,
+    "win_size": 8,
+    "win_shift": 8,
+    "win_mask": 0xff00,
+    "fcn_size": 8,
+    "fcn_shift": 0,
+    "fcn_mask": 0x00ff,
+    }
+
+fp = fp_ietf100_win
 
 def int_to_bytestr(n, length, endianess='big'):
     '''
@@ -82,30 +99,30 @@ class fragment:
         self.end_of_fragment = (1<<fp["fcn_size"])-1
         #
         print("rule_id =", rule_id, "dtag =", dtag)
-        h_rule_id = rule_id<<fp["rid_shift"]&fp["rid_mask"]
-        h_dtag = dtag<<fp["dtag_shift"]&fp["dtag_mask"]
+        h_rule_id = (rule_id<<fp["rid_shift"])&fp["rid_mask"]
+        h_dtag = (dtag<<fp["dtag_shift"])&fp["dtag_mask"]
         h_win = 0
         if window_size:
-            h_win = 1<<fp["win_shift"]&fp["win_mask"]
+            h_win = (1<<fp["win_shift"])&fp["win_mask"]
         self.base_hdr = h_rule_id + h_dtag + h_win
 
     def next_fragment(self, l2_size):
         rest_size = l2_size
         ret = 1
-        if self.pos + l2_size > len(self.srcbuf):
+        if self.pos + l2_size >= len(self.srcbuf):
             self.fcn = self.end_of_fragment
             rest_size = len(self.srcbuf) - self.pos
             ret = 0
-        elif self.fcn == 1:
+        elif self.fcn == 0:
             self.fcn = self.max_fcn
-        else:
-            self.fcn -= 1
-        hdr = self.base_hdr + self.fcn<<fp["fcn_shift"]&fp["fcn_mask"]
+        #
+        hdr = self.base_hdr + (self.fcn<<fp["fcn_shift"])&fp["fcn_mask"]
         #
         h = int_to_bytestr(hdr, int(fp["hdr_size"]/8))
         print("fcn =", self.fcn, "pos = ", self.pos, "rest =", rest_size)
         piece = h + self.srcbuf[self.pos:self.pos+rest_size]
         self.pos += rest_size
+        self.fcn -= 1
         return ret, piece
 
 _SCHC_DEFRAG_NOTYET = 1
@@ -211,7 +228,7 @@ if __name__ == "__main__" :
     message = "Hello LoRa"
     fmt = ">%ds" % len(message)
     buf = struct.pack(fmt, message)
-    fg = fragment(buf, 1, 5, window_size=1)
+    fg = fragment(buf, 0, 0, window_size=1)
     l2_size = len(message)  # it must be set in each sending message.
     #l2_size = 4
     while True:
