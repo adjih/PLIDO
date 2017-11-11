@@ -94,7 +94,11 @@ class fragment:
         if rule_id > 2**fp["rid_size"] - 1:
             raise ValueError("rule_id is too big for the rule id field.")
         #
-        self.max_fcn = (1<<fp["fcn_size"])-2
+        self.max_fcn = (2**fp["fcn_size"])-1
+        # e.g. if fcn size is 3-bit, win_size is going to be 7-bit.
+        self.win_size = self.max_fcn
+        self.win_mask = (2**self.win_size)-1
+        #
         self.fcn = self.max_fcn
         self.end_of_fragment = (1<<fp["fcn_size"])-1
         #
@@ -124,6 +128,17 @@ class fragment:
         self.pos += rest_size
         self.fcn -= 1
         return ret, piece
+
+    def check_ack(self, ackbuf):
+        hdr_size_byte = int(fp["hdr_size"]/8)
+        hdr = bytestr_to_int(recvbuf[:hdr_size_byte])
+        dtag = (hdr&fp["dtag_mask"])>>fp["dtag_shift"]
+        win = hdr&win_mask  # assuming win bits is always placed in the tail.
+        piece = recvbuf[hdr_size_byte:]
+        print("dtag=", dtag, "fcn=", fcn, "piece=", repr(piece))
+        #
+        # XXX need to be fixed
+        return True
 
 _SCHC_DEFRAG_NOTYET = 1
 _SCHC_DEFRAG_DONE = 0
@@ -167,7 +182,6 @@ class defragment_factory():
     def defrag(self, recvbuf):
         # XXX no thread safe
         hdr_size_byte = int(fp["hdr_size"]/8)
-        fmt = ">%dB"%hdr_size_byte
         hdr = bytestr_to_int(recvbuf[:hdr_size_byte])
         dtag = hdr&fp["dtag_mask"]>>fp["dtag_shift"]
         fcn = hdr&fp["fcn_mask"]>>fp["fcn_shift"]
