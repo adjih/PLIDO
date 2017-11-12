@@ -140,9 +140,9 @@ class fragment:
         # XXX need to be fixed
         return True
 
-_SCHC_DEFRAG_NOTYET = 1
-_SCHC_DEFRAG_DONE = 0
-_SCHC_DEFRAG_ERROR = -1
+SCHC_DEFRAG_NOTYET = 1
+SCHC_DEFRAG_DONE = 0
+SCHC_DEFRAG_ERROR = -1
 
 class defragment_message():
     '''
@@ -158,10 +158,10 @@ class defragment_message():
         s = self.fragment_list.get(fcn)
         if s:
             # it's received already.
-            return _SCHC_DEFRAG_ERROR
+            return SCHC_DEFRAG_ERROR
         # set new piece
         self.fragment_list[fcn] = piece
-        return _SCHC_DEFRAG_NOTYET
+        return SCHC_DEFRAG_NOTYET
 
     def assemble(self, fcn):
         return "".join([self.fragment_list[str(i)] for i in
@@ -191,19 +191,19 @@ class defragment_factory():
         m = self.msg_list.get(dtag)
         if m:
             ret = m.defrag(fcn, piece)
-            if ret == _SCHC_DEFRAG_ERROR:
+            if ret == SCHC_DEFRAG_ERROR:
                 print("%s dtag=%s fcn=%s" % (buf, repr(dtag), repr(fcn)))
                 return ret, None
             if fcn == self.end_of_fragment:
-                return _SCHC_DEFRAG_DONE, m.assemble()
-            return _SCHC_DEFRAG_NOTYET, None
+                return SCHC_DEFRAG_DONE, m.assemble()
+            return SCHC_DEFRAG_NOTYET, None
         else:
             # if the piece is the end of fragment, don't put to the list.
             if fcn == self.end_of_fragment:
-                return _SCHC_DEFRAG_DONE, piece
+                return SCHC_DEFRAG_DONE, piece
             # otherwise, put it into the list.
             self.msg_list[dtag] = defragment_message(fcn, piece)
-            return _SCHC_DEFRAG_NOTYET, None
+            return SCHC_DEFRAG_NOTYET, None
 
     def purge(self):
         # XXX no thread safe
@@ -222,9 +222,9 @@ def test_defrag(sent_buf):
     for i in sent_buf:
         print("piece=", repr(i))
         ret, buf = dfg.defrag(i)
-        if ret == _SCHC_DEFRAG_NOTYET:
+        if ret == SCHC_DEFRAG_NOTYET:
             print("not yet")
-        elif ret == _SCHC_DEFRAG_DONE:
+        elif ret == SCHC_DEFRAG_DONE:
             print("done")
             print(repr(buf))
             break
