@@ -50,10 +50,10 @@ class fragment:
 
     pos = 0
 
-    def __init__(self, srcbuf, rule_id, dtag):
+    def __init__(self, srcbuf, rid, dtag):
         self.srcbuf = srcbuf
         # check rule_id size
-        if rule_id > 2**fp["rid_size"] - 1:
+        if rid > 2**fp["rid_size"] - 1:
             raise ValueError("rule_id is too big for the rule id field.")
         #
         self.max_fcn = fp["bitmap_size"]-1  # XXX need to be reviewd
@@ -61,13 +61,13 @@ class fragment:
         self.fcn = self.max_fcn
         self.end_of_fragment = (1<<fp["fcn_size"])-1
         #
-        print("rule_id =", rule_id, "dtag =", dtag)
-        h_rule_id = (rule_id<<fp["rid_shift"])&fp["rid_mask"]
+        print("rule_id =", rid, "dtag =", dtag)
+        h_rid = (rid<<fp["rid_shift"])&fp["rid_mask"]
         h_dtag = (dtag<<fp["dtag_shift"])&fp["dtag_mask"]
         # here don't care window bit anyway
         # the room of the bit is reserved by the *_shift.
         self.win = 0
-        self.base_hdr = h_rule_id + h_dtag
+        self.base_hdr = h_rid + h_dtag
 
     def next_fragment(self, l2_size):
         rest_size = l2_size
@@ -139,11 +139,11 @@ class defragment_message():
 
     def make_ack(self):
         print("rule_id =", self.rid, "dtag =", self.dtag)
-        h_rule_id = (self.rid<<fp["rid_shift"])&fp["rid_mask"]
+        h_rid = (self.rid<<fp["rid_shift"])&fp["rid_mask"]
         h_dtag = (self.dtag<<fp["dtag_shift"])&fp["dtag_mask"]
         h_win = (self.win<<fp["win_shift"])&fp["win_mask"]
         # because the bit0 is reserved for all-bit-1
-        h = int_to_str(h_rule_id + h_dtag + h_win + self.bitmap, int(fp["ack_hdr_size"]/8))
+        h = int_to_str(h_rid + h_dtag + h_win + self.bitmap, int(fp["ack_hdr_size"]/8))
         # XXX need padding
         return h
 
