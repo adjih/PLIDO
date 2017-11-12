@@ -5,34 +5,6 @@ import binascii
 SCHC_TTL = 60   # 60 seconds
 
 # fragmentation parameters
-fp8 = {
-    # 123|1234|1
-    "hdr_size": 8,
-    "rid_size": 3,
-    "rid_shift": 5,
-    "rid_mask": 0xe0,
-    "dtag_size": 4,
-    "dtag_shift": 2,
-    "dtag_mask": 0x1e,
-    "fcn_size": 1,
-    "fcn_shift": 0,
-    "fcn_mask": 0x01,
-    }
-
-fp16 = {
-    # 12345678|1234|1234
-    "hdr_size": 16,
-    "rid_size": 8,
-    "rid_shift": 8,
-    "rid_mask": 0xff00,
-    "dtag_size": 4,
-    "dtag_shift": 4,
-    "dtag_mask": 0x00f0,
-    "fcn_size": 4,
-    "fcn_shift": 0,
-    "fcn_mask": 0x000f,
-    }
-
 fp_ietf100 = {
     # 1234|1234|1|1234567
     "hdr_size": 16,
@@ -48,6 +20,8 @@ fp_ietf100 = {
     "fcn_size": 7,
     "fcn_shift": 0,
     "fcn_mask": 0x007f,
+    "bitmap_size": 7,
+    "bitmap_shift": 0,
     }
 
 fp_ietf100_win = {
@@ -65,6 +39,8 @@ fp_ietf100_win = {
     "fcn_size": 8,
     "fcn_shift": 0,
     "fcn_mask": 0x00ff,
+    "bitmap_size": 8,
+    "bitmap_shift": 0,
     }
 
 fp = fp_ietf100_win
@@ -94,10 +70,7 @@ class fragment:
         if rule_id > 2**fp["rid_size"] - 1:
             raise ValueError("rule_id is too big for the rule id field.")
         #
-        self.max_fcn = (2**fp["fcn_size"])-1
-        # e.g. if fcn size is 3-bit, win_size is going to be 7-bit.
-        self.win_size = self.max_fcn
-        self.win_mask = (2**self.win_size)-1
+        self.max_fcn = (2**fp["bitmap_size"])-1
         #
         self.fcn = self.max_fcn
         self.end_of_fragment = (1<<fp["fcn_size"])-1
@@ -129,11 +102,13 @@ class fragment:
         self.fcn -= 1
         return ret, piece
 
-    def check_ack(self, ackbuf):
+    def check_ack(self, recvbuf):
+        #bitmap = recvbuf[ rid_size + dtag_size + win_size ]
         hdr_size_byte = int(fp["hdr_size"]/8)
         hdr = str_to_int(recvbuf[:hdr_size_byte])
         dtag = (hdr&fp["dtag_mask"])>>fp["dtag_shift"]
-        win = hdr&win_mask  # assuming win bits is always placed in the tail.
+        # assuming win bits is always placed in the tail.
+        bitmap = hdr&fp["bitmap_mask"]
         piece = recvbuf[hdr_size_byte:]
         print("dtag=", dtag, "fcn=", fcn, "piece=", repr(piece))
         #
