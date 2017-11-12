@@ -5,28 +5,14 @@ import binascii
 SCHC_TTL = 60   # 60 seconds
 
 # fragmentation parameters
-fp_ietf100 = {
-    # 1234|1234|1|1234567
-    "hdr_size": 16,
-    "rid_size": 4,
-    "rid_shift": 12,
-    "rid_mask": 0xf000,
-    "dtag_size": 4,
-    "dtag_shift": 8,
-    "dtag_mask": 0x0f00,
-    "win_size": 1,
-    "win_shift": 7,
-    "win_mask": 0x0080,
-    "fcn_size": 7,
-    "fcn_shift": 0,
-    "fcn_mask": 0x007f,
-    "bitmap_size": 7,
-    "bitmap_shift": 0,
-    }
+#"mode": "win-ack-error",
+#"mode": "no-ack",
 
 fp_ietf100_win = {
     # 0|0|12345678|12345678
+    "mode": "win-ack-always",
     "hdr_size": 16,
+    "ack_hdr_size": 16,
     "rid_size": 0,
     "rid_shift": 0,
     "rid_mask": 0x0000,
@@ -64,13 +50,13 @@ class fragment:
 
     pos = 0
 
-    def __init__(self, srcbuf, rule_id, dtag, noack=True, window_size=None):
+    def __init__(self, srcbuf, rule_id, dtag):
         self.srcbuf = srcbuf
         # check rule_id size
         if rule_id > 2**fp["rid_size"] - 1:
             raise ValueError("rule_id is too big for the rule id field.")
         #
-        self.max_fcn = (2**fp["bitmap_size"])-1
+        self.max_fcn = fp["bitmap_size"]-1  # XXX need to be reviewd
         #
         self.fcn = self.max_fcn
         self.end_of_fragment = (1<<fp["fcn_size"])-1
@@ -78,10 +64,10 @@ class fragment:
         print("rule_id =", rule_id, "dtag =", dtag)
         h_rule_id = (rule_id<<fp["rid_shift"])&fp["rid_mask"]
         h_dtag = (dtag<<fp["dtag_shift"])&fp["dtag_mask"]
-        h_win = 0
-        if window_size:
-            h_win = (1<<fp["win_shift"])&fp["win_mask"]
-        self.base_hdr = h_rule_id + h_dtag + h_win
+        # here don't care window bit anyway
+        # the room of the bit is reserved by the *_shift.
+        self.win = 0
+        self.base_hdr = h_rule_id + h_dtag
 
     def next_fragment(self, l2_size):
         rest_size = l2_size
@@ -96,27 +82,31 @@ class fragment:
         hdr = self.base_hdr + (self.fcn<<fp["fcn_shift"])&fp["fcn_mask"]
         #
         h = int_to_str(hdr, int(fp["hdr_size"]/8))
-        print("fcn =", self.fcn, "pos = ", self.pos, "rest =", rest_size)
+        if fp["mode"] != "no-ack":
+            print("win =", self.win, "fcn =", self.fcn, "pos = ", self.pos, "rest =", rest_size)
+        else:
+            print("fcn =", self.fcn, "pos = ", self.pos, "rest =", rest_size)
+        #
         piece = h + self.srcbuf[self.pos:self.pos+rest_size]
         self.pos += rest_size
         self.fcn -= 1
         return ret, piece
 
     def check_ack(self, recvbuf):
-        #bitmap = recvbuf[ rid_size + dtag_size + win_size ]
         hdr_size_byte = int(fp["hdr_size"]/8)
         hdr = str_to_int(recvbuf[:hdr_size_byte])
         dtag = (hdr&fp["dtag_mask"])>>fp["dtag_shift"]
-        # assuming win bits is always placed in the tail.
         bitmap = hdr&fp["bitmap_mask"]
         piece = recvbuf[hdr_size_byte:]
         print("dtag=", dtag, "fcn=", fcn, "piece=", repr(piece))
         #
         # XXX need to be fixed
+        self.win += 1
         return True
 
-SCHC_DEFRAG_NOTYET = 1
 SCHC_DEFRAG_DONE = 0
+SCHC_DEFRAG_NOTYET = 1
+SCHC_DEFRAG_ACK = 2
 SCHC_DEFRAG_ERROR = -1
 
 class defragment_message():
@@ -126,7 +116,11 @@ class defragment_message():
     fragment_list = {}
     ttl = SCHC_TTL
 
-    def __init__(self, fcn, piece):
+    def __init__(self, rid, dtag, win, fcn, piece):
+        self.rid = rid
+        self.dtag = dtag
+        self.win = win
+        self.bitmap = 1<<(fcn+1)
         self.defrag(fcn, piece)
 
     def defrag(self, fcn, piece):
@@ -136,11 +130,22 @@ class defragment_message():
             return SCHC_DEFRAG_ERROR
         # set new piece
         self.fragment_list[fcn] = piece
+        self.bitmap |= 1<<(fcn+1)
         return SCHC_DEFRAG_NOTYET
 
     def assemble(self, fcn):
         return "".join([self.fragment_list[str(i)] for i in
                          range(len(self.fragment_list))])
+
+    def make_ack(self):
+        print("rule_id =", self.rid, "dtag =", self.dtag)
+        h_rule_id = (self.rid<<fp["rid_shift"])&fp["rid_mask"]
+        h_dtag = (self.dtag<<fp["dtag_shift"])&fp["dtag_mask"]
+        h_win = (self.win<<fp["win_shift"])&fp["win_mask"]
+        # because the bit0 is reserved for all-bit-1
+        h = int_to_str(h_rule_id + h_dtag + h_win + self.bitmap, int(fp["ack_hdr_size"]/8))
+        # XXX need padding
+        return h
 
     def is_alive(self):
         self.ttl -= 1
@@ -158,26 +163,44 @@ class defragment_factory():
         # XXX no thread safe
         hdr_size_byte = int(fp["hdr_size"]/8)
         hdr = str_to_int(recvbuf[:hdr_size_byte])
-        dtag = hdr&fp["dtag_mask"]>>fp["dtag_shift"]
-        fcn = hdr&fp["fcn_mask"]>>fp["fcn_shift"]
-        piece = recvbuf[hdr_size_byte:]
-        print("dtag=", dtag, "fcn=", fcn, "piece=", repr(piece))
+        rid = (hdr&fp["rid_mask"])>>fp["rid_shift"]
+        dtag = (hdr&fp["dtag_mask"])>>fp["dtag_shift"]
+        print("rid=", rid, "dtag=", dtag)
+        # XXX ietf100 hack
+        win_ack_always = True # XXX win-ack-always in ietf100 hackathon
+        if win_ack_always == True:
+            win = (hdr&fp["win_mask"])>>fp["win_shift"]
+            fcn = (hdr&fp["fcn_mask"])>>fp["fcn_shift"]
+            piece = recvbuf[hdr_size_byte:]
+            bitmap = None   # just for sure
+            print("win=", win, "fcn=", fcn, "piece=", repr(piece))
+        elif rid == 1:
+            win = (hdr&fp["win_mask"])>>fp["win_shift"]
+            piece = None    # just for sure
+            bitmap = recvbuf[hdr_size_byte:]
+            print("win=", win, "bitmap=", repr(bitmap))
+        else:
+            print("not supported")
+            return SCHC_DEFRAG_NOTYET
+        #
         #
         m = self.msg_list.get(dtag)
         if m:
             ret = m.defrag(fcn, piece)
             if ret == SCHC_DEFRAG_ERROR:
-                print("%s dtag=%s fcn=%s" % (buf, repr(dtag), repr(fcn)))
+                print("ERROR")
                 return ret, None
             if fcn == self.end_of_fragment:
                 return SCHC_DEFRAG_DONE, m.assemble()
+            if win_ack_always and fcn == 0:
+                return SCHC_DEFRAG_ACK, m.make_ack()
             return SCHC_DEFRAG_NOTYET, None
         else:
             # if the piece is the end of fragment, don't put to the list.
             if fcn == self.end_of_fragment:
                 return SCHC_DEFRAG_DONE, piece
             # otherwise, put it into the list.
-            self.msg_list[dtag] = defragment_message(fcn, piece)
+            self.msg_list[dtag] = defragment_message(rid, dtag, win, fcn, piece)
             return SCHC_DEFRAG_NOTYET, None
 
     def purge(self):
