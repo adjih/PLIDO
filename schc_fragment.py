@@ -69,7 +69,7 @@ fp_ietf100_win = {
 
 fp = fp_ietf100_win
 
-def int_to_bytestr(n, length, endianess='big'):
+def int_to_str(n, length, endianess='big'):
     '''
     pycom doesn't support str.to_bytes() and __mul__ of str.
     '''
@@ -78,7 +78,7 @@ def int_to_bytestr(n, length, endianess='big'):
         "".join(["0" for i in range(length*2-len(h))]) + h)
     return s if endianess == 'big' else s[::-1]
 
-def bytestr_to_int(b):
+def str_to_int(b):
     n = 0
     for i in b:
         n = (n<<8)+ord(i)
@@ -122,7 +122,7 @@ class fragment:
         #
         hdr = self.base_hdr + (self.fcn<<fp["fcn_shift"])&fp["fcn_mask"]
         #
-        h = int_to_bytestr(hdr, int(fp["hdr_size"]/8))
+        h = int_to_str(hdr, int(fp["hdr_size"]/8))
         print("fcn =", self.fcn, "pos = ", self.pos, "rest =", rest_size)
         piece = h + self.srcbuf[self.pos:self.pos+rest_size]
         self.pos += rest_size
@@ -131,7 +131,7 @@ class fragment:
 
     def check_ack(self, ackbuf):
         hdr_size_byte = int(fp["hdr_size"]/8)
-        hdr = bytestr_to_int(recvbuf[:hdr_size_byte])
+        hdr = str_to_int(recvbuf[:hdr_size_byte])
         dtag = (hdr&fp["dtag_mask"])>>fp["dtag_shift"]
         win = hdr&win_mask  # assuming win bits is always placed in the tail.
         piece = recvbuf[hdr_size_byte:]
@@ -182,7 +182,7 @@ class defragment_factory():
     def defrag(self, recvbuf):
         # XXX no thread safe
         hdr_size_byte = int(fp["hdr_size"]/8)
-        hdr = bytestr_to_int(recvbuf[:hdr_size_byte])
+        hdr = str_to_int(recvbuf[:hdr_size_byte])
         dtag = hdr&fp["dtag_mask"]>>fp["dtag_shift"]
         fcn = hdr&fp["fcn_mask"]>>fp["fcn_shift"]
         piece = recvbuf[hdr_size_byte:]
